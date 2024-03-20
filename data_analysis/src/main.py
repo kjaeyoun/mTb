@@ -1,96 +1,171 @@
-import matplotlib.pyplot as plt
-import networkx as nx
+import csv
 import os
+import math
+import numpy as np
 import pandas as pd
-from utils.string import fetch_STRING_db, merge_STRING_into_BioID
-
+from utils import bioid, safe_utils
 
 SAINT_FILE = "../data/Supplementary Table 1 - 291 (B) SAINT and MiST analysis for mTb.txt"
-NETWORK_INPUT_FILE = "../results/network_input.txt"
+NETWORK_INPUT_FILE = "../results/networks/network_input.txt"
+NETWORK_FILE_CYJS = "../results/networks/mTb_network.cyjs"
+NETWORK_FILE_EDGE = "../results/networks/mTb_network default edge.csv"
+GMT_FILE_CC = "../data/gprofiler_hsapiens.name/hsapiens.GO_CC.name.gmt"
+SAFE_OUTPUT = "../results/safe/"
+
 BFDR_THRESHOLD = 0.01
 STRING_THRESHOLD = 0.7
 
-
-def load_mTb_dataset(file_path):
-    df_saint = pd.read_csv(file_path, sep="\t", index_col=0)
-    df_saint = df_saint.reset_index(drop=True)
-    columns = list(df_saint)
-    df_saint[["BaitGene", "CellCycle"]
-             ] = df_saint.Bait.str.split("_", expand=True)
-    columns.insert(1, "BaitGene")
-    columns.insert(2, "CellCycle")
-    df_saint = df_saint[columns]
-
-    return df_saint
+NODE_COLORS = {0: "#808080", 1: "#F2D56F", 2: "#E71733", 3: "#3690C0", 4: "#41AB5D",
+               5: "#705592", 6: "#E797A5", 7: "#66B2A2", 8: "#f9a100", 9: "#003679"}
 
 
-def pool_saint_results(df):
-    df = df.sort_values(by=["AvgSpec"])
-    df_pool = df.drop_duplicates(subset=["BaitGene", "PreyGene"], keep='last')
-
-    return df_pool
-
-
-def generate_network(df_pool, output_file, bfdr=0.01, string_score=0.4):
-    df = df_pool[["BaitGene", "PreyGene", "AvgSpec", "BFDR"]]
-    df = df[df.BFDR <= bfdr]
-
-    # To fetch STRING database based on the pooled results.
-    bait_list = df.BaitGene.drop_duplicates().tolist()
-    prey_list = df.PreyGene.drop_duplicates().tolist()
-    gene_list = set(bait_list + prey_list)
-
-    df_string = fetch_STRING_db(gene_list, string_score)
-    df_network = merge_STRING_into_BioID(df, df_string, output_file)
-    return df_network
+class SafeAnalysisParams:
+    def __init__(self, saint_file, network_input_file, cyjs_network_file, network_edge, gmt_file, safe_output, bfdr_threshold=0.01, string_threshold=0.7):
+        self.saint_file = saint_file
+        self.network_input_file = network_input_file
+        self.cyjs_network_file = cyjs_network_file
+        self.network_edge = network_edge
+        self.gmt_file = gmt_file
+        self.safe_output = safe_output
+        self.safe_node_attribute = os.path.join(
+            safe_output, "node_properties_annotation.txt")
+        self.bfdr_threshold = bfdr_threshold
+        self.string_threshold = string_threshold
+        self.output_file_pdf = os.path.join(safe_output, "SAFE_results.pdf")
+        return None
 
 
 def min_max_normalization(value, min_value, max_value):
+    """Perform min-max normalization"""
     return (value - min_value) / (max_value - min_value)
 
 
-def create_weights():
+def create_weights(df_network):
+    """Create weights based on normalization log-scaled AvgSpec and STRING scores."""
+    # AvgSpec을 log10 혹은 log2 스케일로 변환해야할 것 같음.
+    # 각각의 Bait에서의 결과에서 scale을 정해야할 것 같음.
+    # Spectral counts와 String score를 서로 결합할 방법을 고민해야 할 것 같음.
+    # 아래 코드는 다 지우고 다시 작성해야 할 것으로 보임.
+    df_network["logAvgSpec"] = np.log10(
+        df_network['AvgSpec'] + 1)  # +1 to avoid log(0)
+    df_network['NormalizedLogAvgSpec'] = df_network['logAvgSpec'].apply(
+        min_max_normalization, args=(df_network['logAvgSpec'].min(), df_network['logAvgSpec'].max()))
+    df_network['NormalizedStringScore'] = df_network['STRING score'].apply(
+        min_max_normalization, args=(df_network["STRING score"].min(), df_network["STRING score"].max()))
+    df_network["Weights"] = (
+        df_network['NormalizedLogAvgSpec'] + df_network['NormalizedStringScore']) / 2
+    return None
+
+
+
+
+def gene_ontology_from_safe():
+    return None
+
+
+def main():
+    params = SafeAnalysisParams(
+        saint_file=SAINT_FILE,
+        network_input_file=NETWORK_INPUT_FILE,
+        network_edge=NETWORK_FILE_EDGE,
+        cyjs_network_file=NETWORK_FILE_CYJS,
+        gmt_file=GMT_FILE_CC,
+        safe_output=SAFE_OUTPUT,
+        bfdr_threshold=0.01,
+        string_threshold=0.7)
+
+    df_saint = bioid.load_mTb_dataset(SAINT_FILE)
+
+    safe_utils.run_safe_analysis(params)
+    safe_utils.define_node_attributes(params, df_saint)
+    safe_utils.define_edge_attributes(params)
     return None
 
 
 if __name__ == "__main__":
     # To load mTb dataset: Columns for BaitGene and Cell cycle are created during loading.
-    df_saint = load_mTb_dataset(SAINT_FILE)
+    df_saint = bioid.load_mTb_dataset(SAINT_FILE)
 
     # To pool the dataset based on cell cycle
-    df_pool = pool_saint_results(df_saint)
+    df_pool = bioid.pool_saint_results(df_saint)
 
     # To generate input for network input
-    if not os.path.exists(NETWORK_INPUT_FILE):
-        df_network = generate_network(df_pool, output_file=NETWORK_INPUT_FILE,
-                                      bfdr=BFDR_THRESHOLD, string_score=STRING_THRESHOLD)
-    else:
-        df_network = pd.read_csv(NETWORK_INPUT_FILE, sep="\t")
+    main()
 
-    import numpy as np
+
+params = SafeAnalysisParams(
+    saint_file=SAINT_FILE,
+    network_input_file=NETWORK_INPUT_FILE,
+    cyjs_network_file=NETWORK_FILE_CYJS,
+    network_edge=NETWORK_FILE_EDGE,
+    gmt_file=GMT_FILE_CC,
+    safe_output=SAFE_OUTPUT,
+    bfdr_threshold=0.01,
+    string_threshold=0.7)
+
+df_edge = safe_utils.define_edge_attributes(params)
+df_node = safe_utils.define_node_attributes(params, df_saint)
+
+
+def retrive_gmt_file(gmt_file, terms):
+    output_dict = {}
+    with open(gmt_file, "r", newline="") as tsv_input:
+        file_read = csv.reader(tsv_input, delimiter="\t")
+        
+        for term in terms:
+            for row in file_read:
+                go_name = row[1]
+                go_genes = row[2:]
     
-    # -1을 
-    df_network["logAvgSpec"] = np.log10(df_network['AvgSpec'])
-    min_avg_spec = df_network.AvgSpec.min()
-    max_avg_spec = df_network.AvgSpec.max()
-    min_string_score = df_network["STRING score"].min()
-    max_string_score = df_network["STRING score"].max()
-    df_network['NormalizedAvgSpec'] = df_network['AvgSpec'].apply(
-        min_max_normalization, args=(min_avg_spec, max_avg_spec))
-    
-    df_network['NormalizedStringScore'] = df_network['STRING score'].apply(
-        min_max_normalization, args=(min_string_score, max_string_score))
-    
-    df_network["Weights"] = (df_network['NormalizedAvgSpec'] + df_network['NormalizedStringScore']) / 2
+                if term in go_name:
+                    output_dict[go_name] = go_genes
 
-    G = nx.Graph()
+    return output_dict
 
-    for i in range(len(df_network)):
-        row = df_network.iloc[i]
-        bait_gene, prey_gene = row[0], row[1]
-        G.add_edge(bait_gene, prey_gene)
 
-    plt.figure(figsize=(10, 8))
-    nx.draw(G, node_color='lightblue', edge_color='gray')
-    plt.title("Gene Interaction Graph")
-    plt.show()
+def merge_avg_spec():
+    return None
+
+
+significant_preys = df_pool.PreyGene.drop_duplicates().tolist()
+
+df_saint = df_saint[df_saint.PreyGene.isin(significant_preys)]
+df_saint = df_saint[["BaitGene", "CellCycle", "PreyGene", "AvgSpec"]]
+df_g1 = df_saint[(df_saint.CellCycle == "G1")].groupby("PreyGene").sum()
+df_s = df_saint[(df_saint.CellCycle == "S")].groupby("PreyGene").sum()
+df_g2 = df_saint[(df_saint.CellCycle == "G2")].groupby("PreyGene").sum()
+df_m = df_saint[(df_saint.CellCycle == "M")].groupby("PreyGene").sum()
+
+
+df_g1 = df_g1.rename(columns={"AvgSpec": "G1"})
+df_s = df_s.rename(columns={"AvgSpec": "S"})
+df_g2 = df_g2.rename(columns={"AvgSpec": "G2"})
+df_m = df_m.rename(columns={"AvgSpec": "M"})
+
+
+df = pd.merge(df_g1, df_s, left_index=True, right_index=True)
+df = pd.merge(df, df_g2, left_index=True, right_index=True)
+df = pd.merge(df, df_m, left_index=True, right_index=True)
+
+
+log2_fc = []
+for i in range(len(df)):
+    row = df.iloc[i]
+    log2_fc.append(math.log2(max(row) / min(row)))
+df["log2FC"] = log2_fc
+
+
+go_cc = retrive_gmt_file(params.gmt_file, ["centrosom", "centriol", "pericentriolar"])
+go_bp = retrive_gmt_file(
+    "../data/gprofiler_hsapiens.name/hsapiens.GO_BP.name.gmt",
+    ["centrosom", "centriol", "pericentriol"])
+
+centrosomal_proteins = [y for x in go_cc.values() for y in x ]
+bp = [y for x in go_bp.values() for y in x ]
+centrosomal_proteins = set(centrosomal_proteins + bp)
+
+df = df[df.index.isin(centrosomal_proteins) == False]
+
+df["Max"] = df.sum(axis=1)
+
+df.to_csv("../results/novel/test.txt", sep="\t")

@@ -1,0 +1,30 @@
+/* 사이드바 스타일링 */
+.sidebar {
+    height: 100%;
+    width: 250px; /* 사이드바의 너비 */
+    position: fixed; /* 사이드바를 페이지에 고정 */
+    top: 0;
+    left: 0;
+    background-color: #111; /* 배경색 */
+    padding-top: 20px; /* 상단 여백 */
+}
+
+/* 사이드바 내 링크 스타일링 */
+.sidebar a {
+    padding: 10px 15px;
+    text-decoration: none; /* 밑줄 제거 */
+    font-size: 18px; /* 글꼴 크기 */
+    color: white; /* 글꼴 색상 */
+    display: block; /* 블록 레벨 요소로 만듦 */
+}
+
+/* 사이드바 링크에 마우스 오버 시 */
+.sidebar a:hover {
+    background-color: #575757; /* 배경색 변경 */
+}
+
+/* 메인 컨텐츠 스타일링 */
+.main-content {
+    margin-left: 250px; /* 사이드바 너비 만큼 여백 */
+    padding: 20px; /* 여백 */
+}
